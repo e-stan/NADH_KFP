@@ -49,36 +49,6 @@ def sse(p,e):
 def stochSSE(p,e):
   y = 0
   return np.sum(np.power(np.subtract(p[:,y],e[:,y]),2))
-  
-def findFlux_addG3P(p,t,conc,lacE,gluUptake,initialParams = np.random.rand(5,1),q = False,convergence = 0.003):
-
-    e1 = lacE*(p[-1,3]-p[-1,0])/(1-p[-1,0])
-    f2 = lacE - e1
-    
-    a = fitSource(t,p[:,0])
-    good = False
-
-    params = np.array(initialParams)
-    params = [params[0],params[1],f2,params[2],e1,params[3],params[4]]
-    if True:
-       
-       fitted = minimize(lambda x: sse(p,integrateLabelingModel_addG3P(t,x[:3],
-                                                                np.append(conc[:-1],x[6:7]),x[7:],x[3:6])[:,:-1]),np.append(params,a),
-                         method = 'SLSQP',constraints = [{'type': 'eq', 'fun': lambda x :lacconstraint(x,lacE)},
-                                                         {'type': 'ineq', 'fun': lambda x :gluconstraint(x,gluUptake)}])
-       good = fitted.success
-
-       if not good: 
-          print("failed")
-
-    if good:
-        params = fitted.x
-        if q:
-            q.put(np.append(params,fitted.fun))
-
-        return np.append(params,fitted.fun)
-    else:
-        return -1
 
 
 def findFlux(p,t,conc,lacE,gluUptake,initialParams = np.random.rand(4,1),q = False,convergence = 0.003):
@@ -114,6 +84,38 @@ def findFlux(p,t,conc,lacE,gluUptake,initialParams = np.random.rand(4,1),q = Fal
         return np.append(params,fitted.fun)
     else:
         return -1
+  
+def findFlux_addG3P(p,t,conc,lacE,gluUptake,initialParams = np.random.rand(5,1),q = False,convergence = 0.003):
+
+    e1 = lacE*(p[-1,3]-p[-1,0])/(1-p[-1,0])
+    f2 = lacE - e1
+    
+    a = fitSource(t,p[:,0])
+    good = False
+
+    params = np.array(initialParams)
+    params = [params[0],params[1],f2,params[2],e1,params[3],params[4]]
+    if True:
+       
+       fitted = minimize(lambda x: sse(p,integrateLabelingModel_addG3P(t,x[:3],
+                                                                np.append(conc[:-1],x[6:7]),x[7:],x[3:6])[:,:-1]),np.append(params,a),
+                         method = 'SLSQP',constraints = [{'type': 'eq', 'fun': lambda x :lacconstraint(x,lacE)},
+                                                         {'type': 'ineq', 'fun': lambda x :gluconstraint(x,gluUptake)}])
+       good = fitted.success
+
+       if not good: 
+          print("failed")
+
+    if good:
+        params = fitted.x
+        if q:
+            q.put(np.append(params,fitted.fun))
+
+        return np.append(params,fitted.fun)
+    else:
+        return -1
+
+
 	
 def removeBadSol(fluxes,cutoff=0.005,ci=95,target=100):
   
