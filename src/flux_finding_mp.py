@@ -120,6 +120,7 @@ def sse(p,e):
 def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4), q = False):
     lastT = np.max(t)
     lastT = [x for x in range(len(t)) if abs(lastT-t[x]) < 1e-5]
+    data = pd.DataFrame(data)
     filt = data.loc[lastT,:]
 
     #define unlabeled fractions
@@ -168,6 +169,18 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
                                    {'type': 'eq', 'fun': lambda x :nadhBalance(x,labeled_contributions[3])},
                                    {'type': 'eq', 'fun': lambda x :lacconstraint(x,lacE,labeled_contributions[0])}],bounds=bounds)
 
+    integratedSolution = integrateLabelingModel(t,fitted.x,conc,dhap_params,labeled_contributions,initialState)
+    data["UL_lac"] = integratedSolution[:,0]
+    data["L_lac"] = 1-integratedSolution[:,0]
+
+    data["UL_g3p"] = integratedSolution[:,1]
+    data["L_g3p"] = 1-integratedSolution[:,1]
+
+    data["UL_malate"] = integratedSolution[:,2]
+    data["L_malate"] = 1-integratedSolution[:,2]
+
+    data["UL_nadh"] = integratedSolution[:,3]
+    data["L_nadh"] = 1-integratedSolution[:,3]
 
     #return result
     good = fitted.success
@@ -188,6 +201,7 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
 def generateSyntheticData(ts):
     fluxes = np.random.random(4)
     labeled_contributions = np.random.random(4)
+    #labeled_contributions[3] = 1.0
     fracOfGlycolysis = np.random.random()
     glycolysis = 10 * np.random.random()
     gapdh = glycolysis * fracOfGlycolysis
@@ -216,7 +230,6 @@ def generateSyntheticData(ts):
     nadh = interp1d(ts,df["UL_nadh"].values,bounds_error=False,fill_value="extrapolate")
 
     initialState = np.array([initialState[1],0,0])
-
 
     result = integrateG3PLabelingModel(ts, fluxes[1], labeled_contributions[1], conc["G3P"], nadh, lambda x: exponetialCurve(x,dhap_params), initialState)
 
