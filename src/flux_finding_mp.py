@@ -168,7 +168,7 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
     calculateNADHConc = False
     if "NADH" not in conc:
         conc["NADH"] = 1.0
-        calculateNADHConc = True
+        #calculateNADHConc = True
 
     #define initial conditions
     firstT = np.min(t)
@@ -245,7 +245,7 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
 
 
 
-def generateSyntheticData(ts,noise=.005):
+def generateSyntheticData(ts,noise=.00):
     fluxes = np.random.random(4)
     labeled_contributions = .3 + .7 * np.random.random(4)
     #labeled_contributions[3] = 1.0
