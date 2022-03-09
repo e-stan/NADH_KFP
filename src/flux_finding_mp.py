@@ -114,7 +114,7 @@ def integrateG3PLabelingModel(t,g3p_flux,labeled_fraction,conc,nadh,dhap,initial
     return result
 
 def calculateCorrectionFactorForNADH(gap,nadh,g3p):
-    sol = minimize(lambda x:sse(g3p,g3pModel(x[0],gap,x[1])),x0=[nadh/2,0],bounds=[(nadh,1),(0,1)])
+    sol = minimize(lambda x:sse(g3p,g3pModel(x[0],gap,x[1])),x0=[nadh/2,0],bounds=[(0,1),(0,1)])
     c = nadh / sol.x[0]
     c = 1/c
     return c,sol.x[1]
@@ -168,7 +168,7 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
     calculateNADHConc = False
     if "NADH" not in conc:
         conc["NADH"] = 1.0
-        #calculateNADHConc = True
+        calculateNADHConc = True
 
     #define initial conditions
     firstT = np.min(t)
@@ -217,10 +217,9 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
                                                                                 (1 - labeled_contributions[3]) /
                                                                                 labeled_contributions[3] * fluxes[3], None,
                                                                                 dhap),
-                                                                               initialState[3], x[0])[:, 0]),
-                          x0=np.array([conc["NADH"]]), method="Nelder-Mead",
+                                                                               initialState[3]*x[0], x[0])[:, 0]),
+                          x0=np.array([np.random.random()]), method="Nelder-Mead",
                           options={"fatol": 1e-9})
-
         conc["NADH"] = fitted.x[0]
 
 
