@@ -70,17 +70,86 @@ def updateProgress(q, total,message = ""):
 #             ]
 #     return dpdt
 
-def lactateEquation(state,t,flux,conc,unlabeled_flux,nadh,gap):
-    return unlabeled_flux + flux * nadh(t) - (unlabeled_flux+flux) * state / conc
+def KIEConstantLactateMalateNADH(vhvd,x):
+    """
+    returns the KIE constant for LDH, MAD, and GAPDH reactions
+    :param vhvd: reaction velocity of hydrogen / deuterium reaction
+    :param x: substrate (NADH) labeleing percentage
+    :return: KIE constant
+    """
+    return vhvd + x * (1-vhvd)
 
-def malateEquation(state,t,flux,conc,unlabeled_flux,nadh,gap):
-    return unlabeled_flux + flux * nadh(t) - (unlabeled_flux+flux) * state / conc
+def KIEConstantG3P(vhvd_x,vhvd_y,vhvd_xy,x,y):
+    """
+    returns the KIE constant for G3PS reaction
+    :param vhvd_x: reaction velocity of hydrogen / deuterium reaction when substrate 1 is labeled
+    :param vhvd_y: reaction velocity of hydrogen / deuterium reaction when substrate 2 is labeled
+    :param vhvd_xy: reaction velocity of hydrogen / deuterium reaction when both substrates are labeled
+    :param x: substrate 1 labeling percentage
+    :param y: substrate 2 labeling percentage
+    :return: KIE constant
+    """
+    return (x*(1-y)/vhvd_x + (1-x)*y/vhvd_y)*vhvd_xy + x*y + ((1-x)*(1-y))*vhvd_xy
 
-def g3pEquation(state,t,flux,conc,unlabeled_flux,nadh,gap):
-    return unlabeled_flux + flux * nadh(t) * gap(t) - (unlabeled_flux+flux) * state / conc
+def CtConstantG3P(dhap,nadh,vhvd_dhap,vhvd_nadh,vhvd_nadh_dhap):
+    """
+    calculate ct constant (ft = ct * vh) for g3ps reaction
+    :param dhap: dhap labeling %
+    :param nadh: nadh labeling %
+    :param vhvd_dhap: reaction velocity of hydrogen / deuterium reaction when dhap is labeled
+    :param vhvd_nadh: reaction velocity of hydrogen / deuterium reaction when nadh is labeled
+    :param vhvd_nadh_dhap: reaction velocity of hydrogen / deuterium reaction when both nadh and dhap are labeled
+    :return: ct constant
+    """
+    return dhap * (1-nadh) / vhvd_dhap + (1-dhap) * nadh /vhvd_nadh + dhap * nadh / vhvd_nadh_dhap + (1-nadh) * (1-dhap)
 
-def nadhEquation(state,t,flux,conc,unlabeled_flux,nadh,gap):
-    return unlabeled_flux + flux * gap(t) - (unlabeled_flux+flux) * state / conc
+def CtConstantMalateLactateNADH(x,vhvd):
+    """
+    calculate ct constant (ft = ct * vh) for malate, lactate and gapdh reactions
+    :param x: labeling percentage of substrate (NADH)
+    :param vhvd: reaction velocity of hydrogen / deuterium reaction when substrate is labeled
+    :return: ct constant
+    """
+    return (1-x) + x/vhvd
+
+def C0ConstantG3P(dhap,nadh,m2,vhvd_dhap,vhvd_nadh,vhvd_nadh_dhap):
+    """
+    calculate c0 constant (f0 = c0*vh) for G3P reaction
+    :param dhap: dhap labeling % at ISS (isotopic steady state)
+    :param nadh: nadh labeling # at ISS
+    :param m2: M+2 labeleing percentage of G3P
+    :param vhvd_dhap: reaction velocity of hydrogen / deuterium reaction when dhap is labeled
+    :param vhvd_nadh: reaction velocity of hydrogen / deuterium reaction when nadh is labeled
+    :param vhvd_nadh_dhap: reaction velocity of hydrogen / deuterium reaction when both nadh and dhap are labeled
+    :return: c0 constant
+    """
+    return (dhap * nadh / vhvd_nadh_dhap + dhap * (1-nadh) / vhvd_dhap + (1-dhap) * nadh / vhvd_nadh + (1-dhap) * (1-nadh)) * (1-m2/(dhap*nadh)*KIEConstantG3P(vhvd_nadh,vhvd_dhap,vhvd_nadh_dhap,nadh,dhap))/(m2/(dhap*nadh)*KIEConstantG3P(vhvd_nadh,vhvd_dhap,vhvd_nadh_dhap,nadh,dhap))
+
+def C0ConstantMalateLactateNADH(x,p,vhvd):
+    """
+    calculate c0 constant (f0 = c0 * vh) for MAS, LDH, and GAPDH reactions
+    :param x: substrate (NADH) labeling % at ISS
+    :param p: product labeling % at ISS
+    :param vhvd: reaction velocity of hydrogen / deuterium reaction when substrate is labeled
+    :return: c0 constant
+    """
+    return ((1-x)+x/vhvd)*((x/p)-KIEConstantLactateMalateNADH(vhvd,x))/KIEConstantLactateMalateNADH(vhvd,x)
+
+def lactateEquation(state,t,vh,conc,unlabeled_flux,nadh,gap,vhvds):
+    ct = CtConstantMalateLactateNADH(nadh(t),vhvds["vhvd_nadh_ldh"])
+    return unlabeled_flux + vh * nadh(t) - (unlabeled_flux+ct*vh) * state / conc
+
+def malateEquation(state,t,vh,conc,unlabeled_flux,nadh,gap,vhvds):
+    ct = CtConstantMalateLactateNADH(nadh(t),vhvds["vhvd_nadh_mas"])
+    return unlabeled_flux + vh * nadh(t) - (unlabeled_flux+ct*vh) * state / conc
+
+def g3pEquation(state,t,vh,conc,unlabeled_flux,nadh,gap,vhvds):
+    ct = CtConstantG3P(gap(t),nadh(t),vhvds["vhvd_dhap_g3ps"],vhvds["vhvd_nadh_g3ps"],vhvds["vhvd_nadh_dhap_g3ps"])
+    return unlabeled_flux + vh * nadh(t) * gap(t) - (unlabeled_flux+vh * ct) * state / conc
+
+def nadhEquation(state,t,vh,conc,unlabeled_flux,nadh,gap,vhvds):
+    ct = CtConstantMalateLactateNADH(gap(t),vhvds["vhvd_gap_gapdh"])
+    return unlabeled_flux + vh * gap(t) - (unlabeled_flux+ct * vh) * state / conc
 
 def integrateModel(eq,t,args,init,conc):
     return odeint(eq, init, t, args=args, tfirst=False)/conc
@@ -94,50 +163,49 @@ def integrateModel(eq,t,args,init,conc):
 # def nadhBalance(fluxes,labeled_contribution):
 #     return fluxes[3] / labeled_contribution - np.sum(fluxes[:3])
 
-def g3pModel(nadh,gap,c):
-    return [(1-c) + (c)*(1-nadh)*(1-gap),
-            (c) * ((1-nadh) * gap + nadh * (1-gap)),
-            (c) * (nadh) * (gap)]
+def g3pModel(nadh,gap,c,vhvds):
+    ct = CtConstantG3P(gap,nadh,vhvds["vhvd_dhap_g3ps"],vhvds["vhvd_nadh_g3ps"],vhvds["vhvd_nadh_dhap_g3ps"])
+    return [c + (1-c)/ct*(1-gap)*(1-nadh),
+            (1-c)/ct * (nadh * (1-gap)/vhvds["vhvd_nadh_g3ps"] + (1-nadh) * gap / vhvds["vhvd_dhap_g3ps"]),
+            (1-c)/ct * nadh * gap / vhvds["vhvd_nadh_dhap_g3ps"]]
 
-def g3plabelingModel(state,t,g3p_flux,unlabeled_flux,conc,nadh,gap):
-    dpdt = [unlabeled_flux + g3p_flux*gap(t)*nadh(t) - (unlabeled_flux+g3p_flux)*state[0]/conc,
-            g3p_flux*((1-gap(t))*nadh(t) + gap(t) * (1-nadh(t))) - (unlabeled_flux+g3p_flux)*state[1]/conc,
-            g3p_flux*(1-gap(t))*(1-nadh(t)) - (unlabeled_flux+g3p_flux)*state[2]/conc
+def g3plabelingModel(state,t,vh,unlabeled_flux,conc,nadh,gap,vhvds):
+    ct = 1.0
+    dpdt = [unlabeled_flux + vh*gap(t)*nadh(t) - (unlabeled_flux+ct*vh)*state[0]/conc,
+            vh*vhvds["vhvd_nadh_g3ps"]*(1-nadh(t)) * gap(t) + vh*vhvds["vhvd_dhap_g3ps"]*nadh(t)*(1-gap(t)) - (unlabeled_flux+ct*vh)*state[1]/conc,
+            vh*vhvds["vhvd_nadh_dhap_g3ps"]*(1-gap(t))*(1-nadh(t)) - (unlabeled_flux+ct*vh)*state[2]/conc
             ]
     return dpdt
 
-def integrateG3PLabelingModel(t,g3p_flux,labeled_fraction,conc,nadh,dhap,initial_state):
-    totalFlux = g3p_flux/labeled_fraction
-    unlabeled_flux = totalFlux - g3p_flux
-    result = odeint(g3plabelingModel,initial_state,t,args=(g3p_flux,unlabeled_flux,conc,nadh,dhap),tfirst=False)
+def integrateG3PLabelingModel(t,g3p_flux,c0,conc,nadh,dhap,initial_state,vhvds):
+    unlabeled_flux = c0 * g3p_flux
+    result = odeint(g3plabelingModel,initial_state,t,args=(g3p_flux,unlabeled_flux,conc,nadh,dhap,vhvds),tfirst=False)
     result = result / conc
     return result
 
-def calculateCorrectionFactorForNADH(gap,nadh,g3p):
-    sol = minimize(lambda x:sse(g3p,g3pModel(x[0],gap,x[1])),x0=[nadh/2,0],bounds=[(nadh,1),(0,1)])
-    c = nadh / sol.x[0]
-    c = 1/c
-    return c,sol.x[1]
+def calculateCorrectionFactorForNADH(gap,nadh,g3p,vhvds):
+    sol = minimize(lambda x:sse(g3p,g3pModel(x[0],gap,x[1],vhvds)),x0=np.array([nadh/2,0]),bounds=[(nadh,1),(0,1)])
+    return sol.x
 
 
-def integrateLabelingModel(t,fluxes,concs,dhap_params,labeled_fractions,initial_state):
-    unlabeled_source_fluxes = [(1-c)/c * f for c,f in zip(labeled_fractions,fluxes)]
+def integrateLabelingModel(t,fluxes,concs,dhap_params,c0s,vhvds,initial_state):
+    unlabeled_source_fluxes = [c * f for c,f in zip(c0s,fluxes)]
     dhap = lambda z: exponetialCurve(z,dhap_params)
     nadh = interp1d(np.linspace(min(t),max(t),100),
-                    integrateModel(nadhEquation,np.linspace(min(t),max(t),100),(fluxes[3],concs['NADH'],unlabeled_source_fluxes[3],None,dhap),initial_state[3],concs["NADH"])[:,0],
+                    integrateModel(nadhEquation,np.linspace(min(t),max(t),100),(fluxes[3],concs['NADH'],unlabeled_source_fluxes[3],None,dhap,vhvds),initial_state[3],concs["NADH"])[:,0],
                     bounds_error=False,fill_value="extrapolate")
 
     result = np.zeros((len(t),4))
     equations = [lactateEquation,g3pEquation,malateEquation,nadhEquation]
     labels = ["Lactate","G3P","Malate","NADH"]
     for x in range(4):
-        result[:,x] = integrateModel(equations[x],t,(fluxes[x],concs[labels[x]],unlabeled_source_fluxes[x],nadh,dhap),np.array(initial_state[x]),concs[labels[x]])[:,0]
+        result[:,x] = integrateModel(equations[x],t,(fluxes[x],concs[labels[x]],unlabeled_source_fluxes[x],nadh,dhap,vhvds),np.array(initial_state[x]),concs[labels[x]])[:,0]
     return result
 
 def sse(p,e):
   return np.square(np.subtract(p,e)).mean()
 
-def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4), q = False):
+def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.random(4), q = False):
     lastT = np.max(t)
     lastT = [x for x in range(len(t)) if abs(lastT-t[x]) < 1e-5]
     data = pd.DataFrame(data)
@@ -146,23 +214,26 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
     fluxes = np.zeros(initialFluxes.shape)
 
     #define unlabeled fractions
-    labeled_contributions = np.zeros(4)
+    c0s = np.zeros(4)
 
     #correct nadh labeling from g3p
-    corr_factor, labeled_contributions[1] = calculateCorrectionFactorForNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(), [filt["UL_g3p"].values.mean(),filt["L_g3p_M+1"].values.mean(),filt["L_g3p_M+2"].values.mean()])
+    corr_factor, _ = calculateCorrectionFactorForNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(), [filt["UL_g3p"].values.mean(),filt["L_g3p_M+1"].values.mean(),filt["L_g3p_M+2"].values.mean()],vhvds)
     filt["L_nadh"] = corr_factor * filt["L_nadh"]
     data["L_nadh"] = corr_factor * data["L_nadh"]
     filt["UL_nadh"] = 1 - filt["L_nadh"]
     data["UL_nadh"] = 1 - data["L_nadh"]
 
     #lactate
-    labeled_contributions[0] = (filt["L_lac"].values.mean()/filt["L_nadh"].values.mean())
+    c0s[0] = C0ConstantMalateLactateNADH(filt["L_nadh"].values.mean(),filt["L_lac"].values.mean(),vhvds["vhvd_nadh_ldh"])
+
+    #g3ps
+    c0s[1] = C0ConstantG3P(filt["L_gap"].values.mean(),filt["L_nadh"].values.mean(),filt["L_g3p_M+2"].values.mean(),vhvds["vhvd_dhap_g3ps"],vhvds["vhvd_nadh_g3ps"],vhvds["vhvd_nadh_dhap_g3ps"])
 
     #malate
-    labeled_contributions[2] = (filt["L_malate"].values.mean()/filt["L_nadh"].values.mean())
+    c0s[2] = C0ConstantMalateLactateNADH(filt["L_nadh"].values.mean(),filt["L_malate"].values.mean(),vhvds["vhvd_nadh_mas"])
 
     #nadh
-    labeled_contributions[3] = (filt["L_nadh"].values.mean()/filt["L_gap"].values.mean())
+    c0s[3] = C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(),filt["L_nadh"].values.mean(),vhvds["vhvd_gap_gapdh"])
 
     #define NADH concentration if not provided
     calculateNADHConc = False
@@ -186,14 +257,14 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
 
     #fit NADH curve
     fitted = minimize(lambda x: sse(data["UL_nadh"].values,integrateModel(nadhEquation,t,
-                    (x[0],conc["NADH"],(1-labeled_contributions[3])/labeled_contributions[3] * x[0],None,dhap),
+                    (x[0],conc["NADH"],c0s[3] * x[0],None,dhap,vhvds),
                     initialState[3],conc["NADH"])[:,0]),x0=np.array([initialFluxes[3]]),method="Nelder-Mead",
                       options={"fatol":1e-9})
 
     fluxes[3] = fitted.x[0]
     errs[3] = fitted.fun
     nadh = interp1d(np.linspace(min(t),max(t),100),
-                    integrateModel(nadhEquation,np.linspace(min(t),max(t),100),(fluxes[3],conc['NADH'],(1-labeled_contributions[3])/labeled_contributions[3] * fluxes[3],None,dhap),initialState[3],conc["NADH"])[:,0],
+                    integrateModel(nadhEquation,np.linspace(min(t),max(t),100),(fluxes[3],conc['NADH'],c0s[3] * fluxes[3],None,dhap,vhvds),initialState[3],conc["NADH"])[:,0],
                     bounds_error=False,fill_value="extrapolate")    #
 
     #fit lactate, g3p, and malate
@@ -202,7 +273,7 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
     labels2 = ["Lactate","G3P","Malate"]
     for x in range(3):
         fitted = minimize(lambda z: sse(data[labels1[x]].values,integrateModel(equations[x],t,
-                        (z[0],conc[labels2[x]],(1-labeled_contributions[x])/labeled_contributions[x] * z[0],nadh,dhap),
+                        (z[0],conc[labels2[x]],c0s[x] * z[0],nadh,dhap,vhvds),
                         initialState[x],conc[labels2[x]])[:,0]),x0=np.array([initialFluxes[x]]),method="Nelder-Mead",
                           options={"fatol":1e-9})
         fluxes[x] = fitted.x[0]
@@ -210,13 +281,12 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
 
     if calculateNADHConc:
         #fix flux
-        fluxes[3] = np.sum(fluxes[:3]) * labeled_contributions[3]
+        fluxes[3] = np.sum(fluxes[:3]) / (1+c0s[3])
         # fit NADH curve to calculate NADH pool size
         fitted = minimize(lambda x: sse(data["UL_nadh"].values, integrateModel(nadhEquation, t,
                                                                                (fluxes[3], x[0],
-                                                                                (1 - labeled_contributions[3]) /
-                                                                                labeled_contributions[3] * fluxes[3], None,
-                                                                                dhap),
+                                                                                c0s[3] * fluxes[3], None,
+                                                                                dhap,vhvds),
                                                                                initialState[3]*x[0], x[0])[:, 0]),
                           x0=np.array([conc["NADH"]]), method="Nelder-Mead",
                           options={"fatol": 1e-9})
@@ -224,7 +294,7 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
         conc["NADH"] = fitted.x[0]
 
 
-    integratedSolution = integrateLabelingModel(t,fluxes,conc,dhap_params,labeled_contributions,initialState)
+    integratedSolution = integrateLabelingModel(t,fluxes,conc,dhap_params,c0s,vhvds,initialState)
     data["UL_lac"] = integratedSolution[:,0]
     data["L_lac"] = 1-integratedSolution[:,0]
 
@@ -241,19 +311,29 @@ def findFlux(data, t, conc, lacE, gluUptake, initialFluxes = np.random.random(4)
     if q:
         q.put(1)
 
-    return fluxes,labeled_contributions,data,conc,errs
+    return fluxes,c0s,data,conc,errs
 
 
 
 def generateSyntheticData(ts,noise=.00):
     fluxes = np.random.random(4)
-    labeled_contributions = .3 + .7 * np.random.random(4)
+    vhvds = np.ones(6)#np.random.random(6)
+    vhvds = np.power(vhvds,-1)
+    labels = ["vhvd_nadh_ldh","vhvd_nadh_mas","vhvd_gap_gapdh","vhvd_nadh_g3ps","vhvd_dhap_g3ps","vhvd_nadh_dhap_g3ps"]
+    vhvds = {l:v for l,v in zip(labels,vhvds)}
+
+    unlabeledSources = .3 + .7 * np.random.random(4)
+
+    unlabeledFluxes = np.multiply(unlabeledSources,fluxes)
+
+    c0s = .3 + .7 * np.random.random(4)
     #labeled_contributions[3] = 1.0
     fracOfGlycolysis = np.random.random()
     glycolysis = 10 * np.random.random()
     gapdh = glycolysis * fracOfGlycolysis
     fluxes[3] = gapdh
-    fluxes[:3] = fluxes[:3] * gapdh / labeled_contributions[3] / np.sum(fluxes[:3])
+    unlabeledFluxes[3] = gapdh * unlabeledSources[3]
+    fluxes[:3] = fluxes[:3] * (gapdh + unlabeledFluxes[3]) / np.sum(fluxes[:3])
 
     dhap_params = np.random.random(3)
     dhap_params[1] = -1*dhap_params[1] * 3
@@ -266,7 +346,9 @@ def generateSyntheticData(ts,noise=.00):
 
     conc = {label:con for label,con in zip(["Lactate","G3P","Malate","NADH"],conc)}
 
-    dynamics = integrateLabelingModel(ts, fluxes, conc, dhap_params, labeled_contributions, initialState)
+    c0s = unlabeledSources
+
+    dynamics = integrateLabelingModel(ts, fluxes, conc, dhap_params, c0s,vhvds, initialState)
 
     #add noise to conc
     conc = {label:con+rd.choice(switcher) * con * noise * np.random.random() for label,con in conc.items()}
@@ -289,14 +371,14 @@ def generateSyntheticData(ts,noise=.00):
 
     initialState = np.array([initialState[1],0,0])
 
-    result = integrateG3PLabelingModel(ts, fluxes[1], labeled_contributions[1], conc["G3P"], nadh, lambda x: exponetialCurve(x,dhap_params), initialState)
+    result = integrateG3PLabelingModel(ts, fluxes[1],c0s[1], conc["G3P"], nadh, lambda x: exponetialCurve(x,dhap_params), initialState,vhvds)
 
     df["L_g3p_M+1"] = result[:,1]
     df["L_g3p_M+2"] = result[:,2]
 
-    lacE = fluxes[0] / labeled_contributions[0]
+    lacE = -1
 
-    return df,lacE,glycolysis,fluxes,conc,labeled_contributions
+    return df,lacE,glycolysis,fluxes,conc,c0s,vhvds
 
 
 def simulateDataAndInferFlux(ts,numIts,q=None):
