@@ -123,7 +123,7 @@ def C0ConstantG3P(dhap,nadh,m2,vhvd_dhap,vhvd_nadh,vhvd_nadh_dhap):
     :param vhvd_nadh_dhap: reaction velocity of hydrogen / deuterium reaction when both nadh and dhap are labeled
     :return: c0 constant
     """
-    return (dhap * nadh / vhvd_nadh_dhap + dhap * (1-nadh) / vhvd_dhap + (1-dhap) * nadh / vhvd_nadh + (1-dhap) * (1-nadh)) * (1-m2/(dhap*nadh)*KIEConstantG3P(vhvd_nadh,vhvd_dhap,vhvd_nadh_dhap,nadh,dhap))/(m2/(dhap*nadh)*KIEConstantG3P(vhvd_nadh,vhvd_dhap,vhvd_nadh_dhap,nadh,dhap))
+    return (dhap * nadh / vhvd_nadh_dhap + dhap * (1-nadh) / vhvd_dhap + (1-dhap) * nadh / vhvd_nadh + (1-dhap) * (1-nadh)) * ((dhap*nadh)/m2-KIEConstantG3P(vhvd_nadh,vhvd_dhap,vhvd_nadh_dhap,nadh,dhap))/KIEConstantG3P(vhvd_nadh,vhvd_dhap,vhvd_nadh_dhap,nadh,dhap)
 
 def C0ConstantMalateLactateNADH(x,p,vhvd):
     """
@@ -184,8 +184,9 @@ def integrateG3PLabelingModel(t,g3p_flux,c0,conc,nadh,dhap,initial_state,vhvds):
     return result
 
 def calculateCorrectionFactorForNADH(gap,nadh,g3p,vhvds):
-    sol = minimize(lambda x:sse(g3p,g3pModel(x[0],gap,x[1],vhvds)),x0=np.array([nadh/2,0]),bounds=[(nadh,1),(0,1)])
-    return sol.x
+    sol = minimize(lambda x:sse(g3p,g3pModel(x[0],gap,x[1],vhvds)),x0=np.array([1,0]),bounds=[(nadh,1),(0,1)])
+    nadh_factor = sol.x[0] / nadh
+    return nadh_factor,sol.x[1]
 
 
 def integrateLabelingModel(t,fluxes,concs,dhap_params,c0s,vhvds,initial_state):
@@ -218,6 +219,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
 
     #correct nadh labeling from g3p
     corr_factor, _ = calculateCorrectionFactorForNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(), [filt["UL_g3p"].values.mean(),filt["L_g3p_M+1"].values.mean(),filt["L_g3p_M+2"].values.mean()],vhvds)
+    print(corr_factor)
     filt["L_nadh"] = corr_factor * filt["L_nadh"]
     data["L_nadh"] = corr_factor * data["L_nadh"]
     filt["UL_nadh"] = 1 - filt["L_nadh"]
