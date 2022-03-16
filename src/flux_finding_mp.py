@@ -236,9 +236,9 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
 
     #define NADH concentration if not provided
     calculateNADHConc = False
-    if "NADH" not in conc:
-        conc["NADH"] = 1.0
-        calculateNADHConc = True
+    # if "NADH" not in conc:
+    #     conc["NADH"] = 1.0
+    #     calculateNADHConc = True
 
     calculatevhvd_gapdh = False
     if "vhvd_gap_gapdh" not in vhvds:
@@ -266,7 +266,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
         fitted = minimize(lambda x: sse(data["UL_nadh"].values,integrateModel(nadhEquation,t,
                         (x[0],conc["NADH"],c0s[3] * x[0],None,dhap,vhvds),
                         initialState[3],conc["NADH"])[:,0]),x0=np.array([initialFluxes[3]]),method="Nelder-Mead",
-                          options={"fatol":1e-9})
+                          options={"fatol":1e-9},bounds=[(0,None)])
 
         fluxes[3] = fitted.x[0]
         errs[3] = fitted.fun
@@ -280,7 +280,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
                                                                                 dhap, updateAndReturnDict(vhvds,"vhvd_gap_gapdh",x[1])),
                                                                                initialState[3], conc["NADH"])[:, 0]),
                           x0=np.array([initialFluxes[3],1.0]), method="Nelder-Mead",
-                          options={"fatol": 1e-9})
+                          options={"fatol": 1e-9},bounds=[(0,2*gluUptake),(1,None)])
 
         fluxes[3] = fitted.x[0]
         c0s[3] = C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
@@ -302,23 +302,23 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
         fitted = minimize(lambda z: sse(data[labels1[x]].values,integrateModel(equations[x],t,
                         (z[0],conc[labels2[x]],c0s[x] * z[0],nadh,dhap,vhvds),
                         initialState[x],conc[labels2[x]])[:,0]),x0=np.array([initialFluxes[x]]),method="Nelder-Mead",
-                          options={"fatol":1e-9})
+                          options={"fatol":1e-9},bounds=[(0,2*gluUptake)])
         fluxes[x] = fitted.x[0]
         errs[x] = fitted.fun
 
-    if calculateNADHConc:
-        #fix flux
-        fluxes[3] = np.sum(fluxes[:3]) / (1+c0s[3])
-        # fit NADH curve to calculate NADH pool size
-        fitted = minimize(lambda x: sse(data["UL_nadh"].values, integrateModel(nadhEquation, t,
-                                                                               (fluxes[3], x[0],
-                                                                                c0s[3] * fluxes[3], None,
-                                                                                dhap,vhvds),
-                                                                               initialState[3]*x[0], x[0])[:, 0]),
-                          x0=np.array([conc["NADH"]]), method="Nelder-Mead",
-                          options={"fatol": 1e-9})
-
-        conc["NADH"] = fitted.x[0]
+    # if calculateNADHConc:
+    #     #fix flux
+    #     fluxes[3] = np.sum(fluxes[:3]) / (1+c0s[3])
+    #     # fit NADH curve to calculate NADH pool size
+    #     fitted = minimize(lambda x: sse(data["UL_nadh"].values, integrateModel(nadhEquation, t,
+    #                                                                            (fluxes[3], x[0],
+    #                                                                             c0s[3] * fluxes[3], None,
+    #                                                                             dhap,vhvds),
+    #                                                                            initialState[3]*x[0], x[0])[:, 0]),
+    #                       x0=np.array([conc["NADH"]]), method="Nelder-Mead",
+    #                       options={"fatol": 1e-9})
+    #
+    #     conc["NADH"] = fitted.x[0]
 
 
     integratedSolution = integrateLabelingModel(t,fluxes,conc,dhap_params,c0s,vhvds,initialState)
@@ -399,7 +399,6 @@ def generateSyntheticData(ts,noise=.00):
 
     result = integrateG3PLabelingModel(ts, fluxes[1],c0s[1], conc["G3P"], nadh, lambda x: exponetialCurve(x,dhap_params), initialState,vhvds)
 
-    df["UL_g3p"] = result[:,0]
     df["L_g3p_M+1"] = result[:,1]
     df["L_g3p_M+2"] = result[:,2]
 
@@ -411,8 +410,8 @@ def generateSyntheticData(ts,noise=.00):
 def simulateDataAndInferFlux(ts,numIts,q=None):
     data,lacE,glycolysis,fluxes,conc,c0s,vhvds = generateSyntheticData(ts)
     #vhvds = {key:val for key,val in vhvds.items() if key != "vhvd_gap_gapdh"}
-    tmp = {key:val for key,val in conc.items() if "NADH" != key}
-    args = [[data,ts,tmp,lacE,glycolysis, {key:val for key,val in vhvds.items() if key != "vhvd_gap_gapdh"},np.random.random(4)] for _ in range(numIts)]
+    conc["NADH"] = 1.0
+    args = [[data,ts,conc,lacE,glycolysis, {key:val for key,val in vhvds.items() if key != "vhvd_gap_gapdh"},np.random.random(4)] for _ in range(numIts)]
     startingParams = startConcurrentTask(findFlux,args,1,"finding best fit",len(args),verbose=False)
 
     startingParams.sort(key=lambda x: np.sum(x[-1]))
@@ -424,14 +423,14 @@ def simulateDataAndInferFlux(ts,numIts,q=None):
 	
 def removeBadSol(fluxes,cutoff=0.005,ci=95,target=100):
   
-    fluxes = [x for x in fluxes if x[-1] < cutoff]
+    fluxes = [x for x in fluxes if np.sum(x[-1]) < cutoff]
     if len(fluxes) > target:
       fluxes = rd.sample(fluxes,target)
     fluxes = np.array(fluxes)
     intervalParams = []
     interval = []
-    for x in range(fluxes.shape[1]-1):
-      temp = list(fluxes[:,x])
+    for x in range(fluxes.shape[2]):
+      temp = list(fluxes[:,0,x])
       maxi = np.percentile(temp,100-((100-ci)/2),interpolation="nearest")
       mini = np.percentile(temp,(100-ci)/2,interpolation="nearest")
       indOfMax = temp.index(maxi)
@@ -478,15 +477,16 @@ def resampledata(data,ts,q=False):
     return newDf
 
 
-def runMonteCarlo(data, t, conc, exc, gluUp, initialParams=np.random.rand(7, 1), numIts=100,numCores=4):
+def runMonteCarlo(data, t, conc, exc, gluUp,vhvds, initialParams=np.random.rand(7, 1), numIts=100,numCores=4):
     # define monte carlo datasets
 
     datasets = startConcurrentTask(resampledata,[[data,t] for _ in range(numIts)],numCores,"resampling datasets",numIts)
-    args = [[dataset,t,conc,exc,gluUp,initialParams] for dataset in datasets]
+    args = [[dataset,t,conc,exc,gluUp,vhvds,initialParams] for dataset in datasets]
 
-    fluxes = startConcurrentTask(findFlux,args,numCores,"running monte carlo",numIts)
+    result = startConcurrentTask(findFlux,args,numCores,"running monte carlo",numIts)
 
-    fluxes = [x for x in fluxes if type(x) != type(-1)]
+    fluxes = [[x[0],x[1],x[-1]] for x in result if type(x) != type(-1)]
+
     print(len(fluxes),"successful iterations complete")
 
     fluxes = np.array(fluxes)
