@@ -185,9 +185,16 @@ def integrateG3PLabelingModel(t,g3p_flux,c0,conc,nadh,dhap,initial_state,vhvds):
     return result
 
 def calculateCorrectionFactorForNADH(gap,nadh,g3p,vhvds):
-    sol = minimize(lambda x:sse(g3p,g3pModel(x[0],gap,x[1],vhvds)),x0=np.array([1,0]),bounds=[(nadh,1),(0,1)])
+    if nadh > gap:
+        lb = 0
+    else:
+        lb = nadh
+    sol = minimize(lambda x:sse(g3p,g3pModel(x[0],gap,x[1],vhvds)),x0=np.array([1,0]),bounds=[(lb,gap),(0,1)])
     nadh_factor = sol.x[0] / nadh
-    return nadh_factor,sol.x[1]
+    ct = CtConstantG3P(gap, nadh, vhvds["vhvd_dhap_g3ps"], vhvds["vhvd_nadh_g3ps"], vhvds["vhvd_nadh_dhap_g3ps"])
+    c = sol.x[1]
+    c0 = c * ct / (1-c)
+    return nadh_factor,c0
 
 
 def integrateLabelingModel(t,fluxes,concs,dhap_params,c0s,vhvds,initial_state):
@@ -219,7 +226,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     c0s = np.zeros(4)
 
     #correct nadh labeling from g3p
-    corr_factor, _ = calculateCorrectionFactorForNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(), [filt["UL_g3p"].values.mean(),filt["L_g3p_M+1"].values.mean(),filt["L_g3p_M+2"].values.mean()],vhvds)
+    corr_factor, g3p_unlabeled_contribution = calculateCorrectionFactorForNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(), [filt["UL_g3p"].values.mean(),filt["L_g3p_M+1"].values.mean(),filt["L_g3p_M+2"].values.mean()],vhvds)
     filt["L_nadh"] = corr_factor * filt["L_nadh"]
     data["L_nadh"] = corr_factor * data["L_nadh"]
     filt["UL_nadh"] = 1 - filt["L_nadh"]
@@ -229,7 +236,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     c0s[0] = C0ConstantMalateLactateNADH(filt["L_nadh"].values.mean(),filt["L_lac"].values.mean(),vhvds["vhvd_nadh_ldh"])
 
     #g3ps
-    c0s[1] = C0ConstantG3P(filt["L_gap"].values.mean(),filt["L_nadh"].values.mean(),filt["L_g3p_M+2"].values.mean(),vhvds["vhvd_dhap_g3ps"],vhvds["vhvd_nadh_g3ps"],vhvds["vhvd_nadh_dhap_g3ps"])
+    c0s[1] = g3p_unlabeled_contribution #C0ConstantG3P(filt["L_gap"].values.mean(),filt["L_nadh"].values.mean(),filt["L_g3p_M+2"].values.mean(),vhvds["vhvd_dhap_g3ps"],vhvds["vhvd_nadh_g3ps"],vhvds["vhvd_nadh_dhap_g3ps"])
 
     #malate
     c0s[2] = C0ConstantMalateLactateNADH(filt["L_nadh"].values.mean(),filt["L_malate"].values.mean(),vhvds["vhvd_nadh_mas"])
