@@ -278,6 +278,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
                         initialState[3],conc["NADH"])[:,0]),x0=np.array([initialFluxes[3]]),method="Nelder-Mead",
                           options={"fatol":1e-9},bounds=[(0,None)])
 
+
         fluxes[3] = fitted.x[0]
         errs[3] = fitted.fun
     else:
@@ -291,7 +292,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
                                                                                initialState[3], conc["NADH"])[:, 0]),
                           x0=np.array([initialFluxes[3],1.0]), method="Nelder-Mead",
                           #options={"fatol": 1e-9},bounds=[(0,2*gluUptake),(1,None)])
-                          options = {"fatol": 1e-9}, bounds = [(0, 2 * gluUptake)])
+                          options = {"fatol": 1e-9},bounds=[(0,None),(1,None)])
 
         fluxes[3] = fitted.x[0]
         c0s[3] = C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
@@ -313,7 +314,9 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
         fitted = minimize(lambda z: sse(data[labels1[x]].values,integrateModel(equations[x],t,
                         (z[0],conc[labels2[x]],c0s[x] * z[0],nadh,dhap,vhvds),
                         initialState[x],conc[labels2[x]])[:,0]),x0=np.array([initialFluxes[x]]),method="Nelder-Mead",
-                          options={"fatol":1e-9},bounds=[(0,2*gluUptake)])
+                        #  options={"fatol":1e-9},bounds=[(0,2*gluUptake)])
+                        options = {"fatol": 1e-9}, bounds = [(0, None)])
+
         fluxes[x] = fitted.x[0]
         errs[x] = fitted.fun
 
