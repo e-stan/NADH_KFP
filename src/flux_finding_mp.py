@@ -185,11 +185,9 @@ def integrateG3PLabelingModel(t,g3p_flux,c0,conc,nadh,dhap,initial_state,vhvds):
     result = result / conc
     return result
 
-def calculateCorrectionFactorForNADH(gap,nadh,g3p,vhvds):
-    if nadh > gap:
+def calculateCorrectionFactorForNADH(gap,nadh,g3p,vhvds,lb):
+    if lb > gap:
         lb = 0
-    else:
-        lb = nadh
     sol = minimize(lambda x:sse(g3p,g3pModel(x[0],gap,x[1],vhvds)),x0=np.array([1,0]),bounds=[(lb,gap),(0,1)])
     nadh_factor = sol.x[0] / nadh
     ct = CtConstantG3P(gap, nadh, vhvds["vhvd_dhap_g3ps"], vhvds["vhvd_nadh_g3ps"], vhvds["vhvd_nadh_dhap_g3ps"])
@@ -226,12 +224,16 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     #define unlabeled fractions
     c0s = np.zeros(4)
 
+    lb = np.max([filt["L_malate"].values.mean(),filt["L_lac"].values.mean()])
+
     #correct nadh labeling from g3p
-    corr_factor, g3p_unlabeled_contribution = calculateCorrectionFactorForNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(), [filt["UL_g3p"].values.mean(),filt["L_g3p_M+1"].values.mean(),filt["L_g3p_M+2"].values.mean()],vhvds)
+    corr_factor, g3p_unlabeled_contribution = calculateCorrectionFactorForNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(), [filt["UL_g3p"].values.mean(),filt["L_g3p_M+1"].values.mean(),filt["L_g3p_M+2"].values.mean()],vhvds,lb)
     filt["L_nadh"] = corr_factor * filt["L_nadh"]
     data["L_nadh"] = corr_factor * data["L_nadh"]
     filt["UL_nadh"] = 1 - filt["L_nadh"]
     data["UL_nadh"] = 1 - data["L_nadh"]
+
+    print("NADH correction factor: ",corr_factor)
 
     #lactate
     c0s[0] = C0ConstantMalateLactateNADH(filt["L_nadh"].values.mean(),filt["L_lac"].values.mean(),vhvds["vhvd_nadh_ldh"])
@@ -289,6 +291,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
                                                                                initialState[3], conc["NADH"])[:, 0]),
                           x0=np.array([initialFluxes[3],1.0]), method="Nelder-Mead",
                           options={"fatol": 1e-9},bounds=[(0,2*gluUptake),(1,None)])
+                          #options = {"fatol": 1e-9}, bounds = [(0, 2 * gluUptake), (1, None)])
 
         fluxes[3] = fitted.x[0]
         c0s[3] = C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
