@@ -233,7 +233,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     filt["UL_nadh"] = 1 - filt["L_nadh"]
     data["UL_nadh"] = 1 - data["L_nadh"]
 
-    print("NADH correction factor: ",corr_factor)
+    print("Corrected NADH labeling : ",corr_factor * filt["L_nadh"].values.mean())
 
     #lactate
     c0s[0] = C0ConstantMalateLactateNADH(filt["L_nadh"].values.mean(),filt["L_lac"].values.mean(),vhvds["vhvd_nadh_ldh"])
