@@ -10,6 +10,7 @@ from threading import Thread
 import pandas as pd
 import scipy.stats as stats
 from scipy.interpolate import interp1d
+from copy import deepcopy
 
 def startConcurrentTask(task,args,numCores,message,total,chunksize="none",verbose=True):
     if verbose:
@@ -217,7 +218,7 @@ def sse(p,e):
 def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.random(4), q = False):
     lastT = np.max(t)
     lastT = [x for x in range(len(t)) if abs(lastT-t[x]) < 1e-5]
-    data = pd.DataFrame(data)
+    data = deepcopy(data)
     filt = data.loc[lastT,:]
 
     fluxes = np.zeros(initialFluxes.shape)
