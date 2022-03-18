@@ -290,8 +290,8 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
                                                                                 dhap, updateAndReturnDict(vhvds,"vhvd_gap_gapdh",x[1])),
                                                                                initialState[3], conc["NADH"])[:, 0]),
                           x0=np.array([initialFluxes[3],1.0]), method="Nelder-Mead",
-                          options={"fatol": 1e-9},bounds=[(0,2*gluUptake),(1,None)])
-                          #options = {"fatol": 1e-9}, bounds = [(0, 2 * gluUptake), (1, None)])
+                          #options={"fatol": 1e-9},bounds=[(0,2*gluUptake),(1,None)])
+                          options = {"fatol": 1e-9}, bounds = [(0, 2 * gluUptake)])
 
         fluxes[3] = fitted.x[0]
         c0s[3] = C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
