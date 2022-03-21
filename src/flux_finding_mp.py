@@ -306,6 +306,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     equations = [lactateEquation,g3pEquation,malateEquation]
     labels1 = ["UL_lac","UL_g3p","UL_malate"]
     labels2 = ["Lactate","G3P","Malate"]
+    ubs = [lacE,None,None]
     for x in range(3):
         worstCaseSSE = sse(data[labels1[x]].values,integrateModel(equations[x],t,
                         (0,conc[labels2[x]],c0s[x] * 0,nadh,dhap,vhvds),
@@ -313,7 +314,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
         fitted = minimize(lambda z: sse(data[labels1[x]].values,integrateModel(equations[x],t,
                         (z[0],conc[labels2[x]],c0s[x] * z[0],nadh,dhap,vhvds),
                         initialState[x],conc[labels2[x]])[:,0])/worstCaseSSE + 1e-6 * z[0],x0=np.array([initialFluxes[x]]),method="Nelder-Mead",
-                          options={"fatol":1e-9},bounds=[(0,None)])
+                          options={"fatol":1e-9},bounds=[(0,ubs[x])])
         fluxes[x] = fitted.x[0]
         errs[x] = fitted.fun
 
@@ -398,7 +399,7 @@ def generateSyntheticData(ts,noise=.00):
     df["L_g3p_M+1"] = result[:,1]
     df["L_g3p_M+2"] = result[:,2]
 
-    lacE = -1
+    lacE = fluxes[0] + unlabeledFluxes[0]
 
     return df,lacE,glycolysis,fluxes,conc,c0s,vhvds
 
