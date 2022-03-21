@@ -245,15 +245,11 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     #malate
     c0s[2] = C0ConstantMalateLactateNADH(filt["L_nadh"].values.mean(),filt["L_malate"].values.mean(),vhvds["vhvd_nadh_mas"])
 
-    #define NADH concentration if not provided
-    calculateNADHConc = False
-    # if "NADH" not in conc:
-    #     conc["NADH"] = 1.0
-    #     calculateNADHConc = True
-
     calculatevhvd_gapdh = False
     if "vhvd_gap_gapdh" not in vhvds:
         calculatevhvd_gapdh = True
+
+    conc["NADH"] = 1.0
 
     #define initial conditions
     firstT = np.min(t)
@@ -264,10 +260,11 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     dhap_params = fitSource(t, data["UL_gap"])
     dhap = lambda x: exponetialCurve(x,dhap_params)
 
-    #initalize bounds on variables
-    #bounds = tuple([(0,None) for _ in range(len(initialFluxes))])
-
     errs = np.zeros(4)
+
+    def updateAndReturnDict(dict, key, val):
+        dict[key] = val
+        return dict
 
     #fit NADH curve
     if not calculatevhvd_gapdh:
@@ -275,30 +272,30 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
         c0s[3] = C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
                                              vhvds["vhvd_gap_gapdh"])
         fitted = minimize(lambda x: sse(data["UL_nadh"].values,integrateModel(nadhEquation,t,
-                        (x[0],conc["NADH"],c0s[3] * x[0],None,dhap,vhvds),
-                        initialState[3],conc["NADH"])[:,0]),x0=np.array([initialFluxes[3]]),method="Nelder-Mead",
-                          options={"fatol":1e-9},bounds=[(0,None)])
+                        (x[0],x[1],c0s[3] * x[0],None,dhap,vhvds),
+                        initialState[3]*x[1],x[1])[:,0]),x0=np.array([initialFluxes[3],1.0]),method="Nelder-Mead",
+                          options={"fatol":1e-9},bounds=[(0,None),(0,None)])
 
         fluxes[3] = fitted.x[0]
+        conc["NADH"] = fitted.x[1]
         errs[3] = fitted.fun
     else:
-        def updateAndReturnDict(dict,key,val):
-            dict[key] = val
-            return dict
         fitted = minimize(lambda x: sse(data["UL_nadh"].values, integrateModel(nadhEquation, t,
-                                                                               (x[0], conc["NADH"], C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
+                                                                               (x[0], x[2], C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
                                              x[1]) * x[0], None,
                                                                                 dhap, updateAndReturnDict(vhvds,"vhvd_gap_gapdh",x[1])),
-                                                                               initialState[3], conc["NADH"])[:, 0]),
-                          x0=np.array([initialFluxes[3],1.0]), method="Nelder-Mead",
-                          options={"fatol": 1e-9},bounds=[(0,2*gluUptake),(1,None)])
+                                                                               initialState[3]*x[2], x[2])[:, 0]),
+                          x0=np.array([initialFluxes[3],1.0,1.0]), method="Nelder-Mead",
+                          options={"fatol": 1e-9},bounds=[(0,None),(1,None),(0,None)])
 
         fluxes[3] = fitted.x[0]
+        conc["NADH"] = fitted.x[2]
         c0s[3] = C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
                                              vhvds["vhvd_gap_gapdh"])
         vhvds["vhvd_gap_gapdh"] = fitted.x[1]
         errs[3] = fitted.fun
 
+    initialState[3] = initialState[3] * conc["NADH"]
 
 
     nadh = interp1d(np.linspace(min(t),max(t),100),
@@ -310,27 +307,15 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     labels1 = ["UL_lac","UL_g3p","UL_malate"]
     labels2 = ["Lactate","G3P","Malate"]
     for x in range(3):
+        worstCaseSSE = sse(data[labels1[x]].values,integrateModel(equations[x],t,
+                        (0,conc[labels2[x]],c0s[x] * 0,nadh,dhap,vhvds),
+                        initialState[x],conc[labels2[x]])[:,0])
         fitted = minimize(lambda z: sse(data[labels1[x]].values,integrateModel(equations[x],t,
                         (z[0],conc[labels2[x]],c0s[x] * z[0],nadh,dhap,vhvds),
-                        initialState[x],conc[labels2[x]])[:,0]),x0=np.array([initialFluxes[x]]),method="Nelder-Mead",
-                          options={"fatol":1e-9},bounds=[(0,2*gluUptake)])
+                        initialState[x],conc[labels2[x]])[:,0])/worstCaseSSE + 1e-6 * z[0],x0=np.array([initialFluxes[x]]),method="Nelder-Mead",
+                          options={"fatol":1e-9},bounds=[(0,None)])
         fluxes[x] = fitted.x[0]
         errs[x] = fitted.fun
-
-    # if calculateNADHConc:
-    #     #fix flux
-    #     fluxes[3] = np.sum(fluxes[:3]) / (1+c0s[3])
-    #     # fit NADH curve to calculate NADH pool size
-    #     fitted = minimize(lambda x: sse(data["UL_nadh"].values, integrateModel(nadhEquation, t,
-    #                                                                            (fluxes[3], x[0],
-    #                                                                             c0s[3] * fluxes[3], None,
-    #                                                                             dhap,vhvds),
-    #                                                                            initialState[3]*x[0], x[0])[:, 0]),
-    #                       x0=np.array([conc["NADH"]]), method="Nelder-Mead",
-    #                       options={"fatol": 1e-9})
-    #
-    #     conc["NADH"] = fitted.x[0]
-
 
     integratedSolution = integrateLabelingModel(t,fluxes,conc,dhap_params,c0s,vhvds,initialState)
     data["UL_lac"] = integratedSolution[:,0]
@@ -421,7 +406,6 @@ def generateSyntheticData(ts,noise=.00):
 def simulateDataAndInferFlux(ts,numIts,q=None):
     data,lacE,glycolysis,fluxes,conc,c0s,vhvds = generateSyntheticData(ts)
     #vhvds = {key:val for key,val in vhvds.items() if key != "vhvd_gap_gapdh"}
-    conc["NADH"] = 1.0
     args = [[data,ts,conc,lacE,glycolysis, {key:val for key,val in vhvds.items() if key != "vhvd_gap_gapdh"},np.random.random(4)] for _ in range(numIts)]
     startingParams = startConcurrentTask(findFlux,args,1,"finding best fit",len(args),verbose=False)
 
@@ -503,6 +487,9 @@ def runMonteCarlo(data, t, conc, exc, gluUp,vhvds, initialParams=np.random.rand(
     fluxes = np.array(fluxes)
 
     return fluxes
+
+
+
 
 
 
