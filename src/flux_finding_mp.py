@@ -167,9 +167,9 @@ def integrateModel(eq,t,args,init,conc):
 
 def g3pModel(nadh,gap,c,vhvds):
     ct = CtConstantG3P(gap,nadh,vhvds["vhvd_dhap_g3ps"],vhvds["vhvd_nadh_g3ps"],vhvds["vhvd_nadh_dhap_g3ps"])
-    return [c + (1-c)/ct*(1-gap)*(1-nadh),
+    return np.array([c + (1-c)/ct*(1-gap)*(1-nadh),
             (1-c)/ct * (nadh * (1-gap)/vhvds["vhvd_nadh_g3ps"] + (1-nadh) * gap / vhvds["vhvd_dhap_g3ps"]),
-            (1-c)/ct * nadh * gap / vhvds["vhvd_nadh_dhap_g3ps"]]
+            (1-c)/ct * nadh * gap / vhvds["vhvd_nadh_dhap_g3ps"]])
 
 def g3plabelingModel(state,t,vh,unlabeled_flux,conc,nadh,gap,vhvds):
     ct = CtConstantG3P(1-gap(t),1-nadh(t),vhvds["vhvd_dhap_g3ps"],vhvds["vhvd_nadh_g3ps"],vhvds["vhvd_nadh_dhap_g3ps"])
@@ -211,14 +211,26 @@ def integrateLabelingModel(t,fluxes,concs,dhap_params,c0s,vhvds,initial_state):
         result[:,x] = integrateModel(equations[x],t,(fluxes[x],concs[labels[x]],unlabeled_source_fluxes[x],nadh,dhap,vhvds),np.array(initial_state[x]),concs[labels[x]])[:,0]
     return result
 
-def sse(p,e):
-  return np.square(np.subtract(p,e)).mean()
+def sse(p,e,weights=None):
+  if type(weights) == type(None):
+      weights = np.ones(p.shape)
+  return np.multiply(np.square(np.subtract(p,e)),weights).sum()
 
 def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.random(4), q = False):
     lastT = np.max(t)
     lastT = [x for x in range(len(t)) if abs(lastT-t[x]) < 1e-5]
     data = deepcopy(data)
     filt = data.loc[lastT,:]
+
+    #get mapping of times to index
+    uniqueTs = list(set(t))
+    uniqueTs.sort()
+    tMapper = {}
+    for tt in uniqueTs:
+        tMapper[tt] = []
+        for x in range(len(t)):
+            if tt == t[x]:
+                tMapper[tt].append(x)
 
     fluxes = np.zeros(initialFluxes.shape)
 
@@ -228,22 +240,13 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     lb = np.max([filt["L_lac"].values.mean(),filt["L_malate"].values.mean()])
 
     #correct nadh labeling from g3p
-    corr_factor, g3p_unlabeled_contribution = calculateCorrectionFactorForNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(), [filt["UL_g3p"].values.mean(),filt["L_g3p_M+1"].values.mean(),filt["L_g3p_M+2"].values.mean()],vhvds,lb)
+    corr_factor, g3p_unlabeled_contribution = calculateCorrectionFactorForNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(), np.array([filt["UL_g3p"].values.mean(),filt["L_g3p_M+1"].values.mean(),filt["L_g3p_M+2"].values.mean()]),vhvds,lb)
     filt["L_nadh"] = corr_factor * filt["L_nadh"]
     data["L_nadh"] = corr_factor * data["L_nadh"]
     filt["UL_nadh"] = 1 - filt["L_nadh"]
     data["UL_nadh"] = 1 - data["L_nadh"]
 
     print("Corrected NADH labeling: ",corr_factor * filt["L_nadh"].values.mean() )
-
-    #lactate
-    c0s[0] = C0ConstantMalateLactateNADH(filt["L_nadh"].values.mean(),filt["L_lac"].values.mean(),vhvds["vhvd_nadh_ldh"])
-
-    #g3ps
-    c0s[1] = g3p_unlabeled_contribution #C0ConstantG3P(filt["L_gap"].values.mean(),filt["L_nadh"].values.mean(),filt["L_g3p_M+2"].values.mean(),vhvds["vhvd_dhap_g3ps"],vhvds["vhvd_nadh_g3ps"],vhvds["vhvd_nadh_dhap_g3ps"])
-
-    #malate
-    c0s[2] = C0ConstantMalateLactateNADH(filt["L_nadh"].values.mean(),filt["L_malate"].values.mean(),vhvds["vhvd_nadh_mas"])
 
     calculatevhvd_gapdh = False
     if "vhvd_gap_gapdh" not in vhvds:
@@ -257,7 +260,8 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     initialState = [np.mean(data.loc[firstT,label])*c for label,c in zip(["UL_lac","UL_g3p","UL_malate","UL_nadh"],[conc["Lactate"],conc["G3P"],conc["Malate"],conc["NADH"]])]
 
     #fit curve to dhap (gap) data
-    dhap_params = fitSource(t, data["UL_gap"])
+    weights = [np.min([1,1/np.std(data["UL_gap"].values[tMapper[t[x]]])]) for x in range(len(t))]
+    dhap_params = fitSource(t, data["UL_gap"],weights)
     dhap = lambda x: exponetialCurve(x,dhap_params)
 
     errs = np.zeros(4)
@@ -267,13 +271,14 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
         return dict
 
     #fit NADH curve
+    weights = [np.min([1,1/np.std(data["UL_nadh"].values[tMapper[t[x]]])]) for x in range(len(t))]
     if not calculatevhvd_gapdh:
         # nadh
         c0s[3] = C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
                                              vhvds["vhvd_gap_gapdh"])
         fitted = minimize(lambda x: sse(data["UL_nadh"].values,integrateModel(nadhEquation,t,
                         (x[0],x[1],c0s[3] * x[0],None,dhap,vhvds),
-                        initialState[3]*x[1],x[1])[:,0]),x0=np.array([initialFluxes[3],1.0]),method="Nelder-Mead",
+                        initialState[3]*x[1],x[1])[:,0],weights=weights),x0=np.array([initialFluxes[3],1.0]),method="Nelder-Mead",
                           options={"fatol":1e-9},bounds=[(0,None),(0,None)])
 
         fluxes[3] = fitted.x[0]
@@ -284,7 +289,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
                                                                                (x[0], x[2], C0ConstantMalateLactateNADH(filt["L_gap"].values.mean(), filt["L_nadh"].values.mean(),
                                              x[1]) * x[0], None,
                                                                                 dhap, updateAndReturnDict(vhvds,"vhvd_gap_gapdh",x[1])),
-                                                                               initialState[3]*x[2], x[2])[:, 0]),
+                                                                               initialState[3]*x[2], x[2])[:, 0],weights),
                           x0=np.array([initialFluxes[3],1.0,1.0]), method="Nelder-Mead",
                           options={"fatol": 1e-9},bounds=[(0,None),(1,None),(0,None)])
 
@@ -300,7 +305,18 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
 
     nadh = interp1d(np.linspace(min(t),max(t),100),
                     integrateModel(nadhEquation,np.linspace(min(t),max(t),100),(fluxes[3],conc['NADH'],c0s[3] * fluxes[3],None,dhap,vhvds),initialState[3],conc["NADH"])[:,0],
-                    bounds_error=False,fill_value="extrapolate")    #
+                    bounds_error=False,fill_value="extrapolate")
+
+    # lactate
+    c0s[0] = C0ConstantMalateLactateNADH(nadh(max(t)), filt["L_lac"].values.mean(),
+                                         vhvds["vhvd_nadh_ldh"])
+
+    # g3ps
+    c0s[1] = g3p_unlabeled_contribution
+
+    # malate
+    c0s[2] = C0ConstantMalateLactateNADH(nadh(max(t)), filt["L_malate"].values.mean(),
+                                         vhvds["vhvd_nadh_mas"])
 
     #fit lactate, g3p, and malate
     equations = [lactateEquation,g3pEquation,malateEquation]
@@ -308,12 +324,14 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     labels2 = ["Lactate","G3P","Malate"]
     ubs = [lacE,None,None]
     for x in range(3):
+        weights = [np.min([1, 1 / np.std(data[labels1[x]].values[tMapper[t[xx]]])]) for xx in range(len(t))]
         worstCaseSSE = sse(data[labels1[x]].values,integrateModel(equations[x],t,
                         (0,conc[labels2[x]],c0s[x] * 0,nadh,dhap,vhvds),
-                        initialState[x],conc[labels2[x]])[:,0])
+                        initialState[x],conc[labels2[x]])[:,0],weights)
+
         fitted = minimize(lambda z: sse(data[labels1[x]].values,integrateModel(equations[x],t,
                         (z[0],conc[labels2[x]],c0s[x] * z[0],nadh,dhap,vhvds),
-                        initialState[x],conc[labels2[x]])[:,0])/worstCaseSSE + 1e-6 * z[0],x0=np.array([initialFluxes[x]]),method="Nelder-Mead",
+                        initialState[x],conc[labels2[x]])[:,0],weights)/worstCaseSSE + 1e-6 * z[0],x0=np.array([initialFluxes[x]]),method="Nelder-Mead",
                           options={"fatol":1e-9},bounds=[(0,ubs[x])])
         fluxes[x] = fitted.x[0]
         errs[x] = fitted.fun
@@ -441,9 +459,9 @@ def exponetialCurve(t,params):
     return params[0] * np.exp(params[1] * t) + params[2]
 
 
-def fitSource(t,l):
+def fitSource(t,l,weights=None):
     good = False
-    errorFunc = lambda x: sse(exponetialCurve(t,x),l)
+    errorFunc = lambda x: sse(exponetialCurve(t,x),l,weights)
     #while not good:
     sol = minimize(errorFunc,[0,0,0])
     good = sol.success
