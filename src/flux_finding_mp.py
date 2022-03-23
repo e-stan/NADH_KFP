@@ -241,11 +241,18 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     #structure to hold unlabeled fluxes
     c0s = np.zeros(4)
 
+    #fit curve to dhap (gap) data
+    weights = [np.min([1,1/np.std(data["UL_gap"].values[tMapper[t[x]]])]) for x in range(len(t))]
+    dhap_params = fitSource(t, data["UL_gap"],weights)
+    dhap = lambda x: exponetialCurve(x,dhap_params)
+
+    dhapSS = 1-dhap(max(t))
+
     #define the lower bound for steady state NADH labeling
     lb = np.max([filt["L_lac"].values.mean(),filt["L_malate"].values.mean()])
 
     #calculate NADH labeling and C0[1] from steady state GAP and G3P labeling
-    nadhSS, c0s[1] = calculateSteadyStateNADH(filt["L_gap"].values.mean(), np.array([filt["UL_g3p"].values.mean(), filt["L_g3p_M+1"].values.mean(), filt["L_g3p_M+2"].values.mean()]), vhvds, lb)
+    nadhSS, c0s[1] = calculateSteadyStateNADH(dhapSS, np.array([filt["UL_g3p"].values.mean(), filt["L_g3p_M+1"].values.mean(), filt["L_g3p_M+2"].values.mean()]), vhvds, lb)
 
     print("ISS NADH labeling: ",nadhSS)
 
@@ -253,11 +260,6 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
 
     #define initial conditions
     initialState = [1.0*c for c in [conc["Lactate"],conc["G3P"],conc["Malate"],conc["NADH"]]]
-
-    #fit curve to dhap (gap) data
-    weights = [np.min([1,1/np.std(data["UL_gap"].values[tMapper[t[x]]])]) for x in range(len(t))]
-    dhap_params = fitSource(t, data["UL_gap"],weights)
-    dhap = lambda x: exponetialCurve(x,dhap_params)
 
     errs = np.zeros(4)
 
@@ -269,7 +271,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     c0s[2] = C0ConstantMalateLactateNADH(nadhSS, filt["L_malate"].values.mean(),
                                          vhvds["vhvd_nadh_mas"])
     #NADH
-    c0s[3] = C0ConstantMalateLactateNADH(1-dhap(max(t)), nadhSS,
+    c0s[3] = C0ConstantMalateLactateNADH(dhapSS, nadhSS,
                                          vhvds["vhvd_gap_gapdh"])
 
     def updateAndReturnDict(dict, key, val):
@@ -285,10 +287,11 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     # worstCaseSSE = sse(data[labels1].values, integrateLabelingModel(t,np.zeros(4),conc,
     #                     dhap_params,c0s,vhvds,initialState)[:,[0,1,2]])
 
+    weights = np.array([[np.min([1,1/np.std(data[lab].values[tMapper[t[x]]])]) for x in range(len(t))] for lab in ["UL_lac","UL_g3p","UL_malate"]]).transpose()
     fitted = minimize(lambda z: sse(data[labels1].values, integrateLabelingModel(t,updateAndReturnArray(updateAndReturnArray(fluxes,[0,1,2],z[:3]),3, np.sum(z[:3])/(c0s[3]+1)),updateAndReturnDict(conc,"NADH",z[3]),
-                        dhap_params,c0s,vhvds,updateAndReturnArray(initialState,3,z[3]))[:,[0,1,2]]) + 1e-5 * np.sum(np.square(z[:3])), x0=np.array(list(initialFluxes[:3])+[conc["NADH"]]),
+                        dhap_params,c0s,vhvds,updateAndReturnArray(initialState,3,z[3]))[:,[0,1,2]],weights) + 1e-5 * np.sum(np.square(z[:3])), x0=np.array(list(initialFluxes[:3])+[conc["NADH"]]),
                       method="Nelder-Mead",
-                      options={"fatol": 1e-9}, bounds=[(0, lacE),(0,2*gluUptake),(0,2*gluUptake),(0,None)])
+                      options={"fatol": 1e-10}, bounds=[(0, lacE),(0,2*gluUptake),(0,2*gluUptake),(0,None)])
 
     fluxes[:3] = fitted.x[:3]
     fluxes[3] = np.sum(fitted.x[:3])/(c0s[3]+1)
