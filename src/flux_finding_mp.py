@@ -308,14 +308,14 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
                     bounds_error=False,fill_value="extrapolate")
 
     # lactate
-    c0s[0] = C0ConstantMalateLactateNADH(nadh(max(t)), filt["L_lac"].values.mean(),
+    c0s[0] = C0ConstantMalateLactateNADH(1-nadh(max(t)), filt["L_lac"].values.mean(),
                                          vhvds["vhvd_nadh_ldh"])
 
     # g3ps
     c0s[1] = g3p_unlabeled_contribution
 
     # malate
-    c0s[2] = C0ConstantMalateLactateNADH(nadh(max(t)), filt["L_malate"].values.mean(),
+    c0s[2] = C0ConstantMalateLactateNADH(1-nadh(max(t)), filt["L_malate"].values.mean(),
                                          vhvds["vhvd_nadh_mas"])
 
     #fit lactate, g3p, and malate
