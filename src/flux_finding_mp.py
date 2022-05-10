@@ -225,6 +225,7 @@ def findFlux(data, t, conc, lacE, gluUptake,vhvds, initialFluxes = np.random.ran
     data = deepcopy(data)
     filt = data.loc[lastT,:]
 
+
     #get mapping of times to index
     uniqueTs = list(set(t))
     uniqueTs.sort()
