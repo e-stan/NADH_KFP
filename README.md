@@ -15,5 +15,9 @@ scipy (v1.4.1)
 
 matplotlib (v3.1.3)
 
+## Notebook for removing 13C signal from 2H labeling pattern:
+
+https://drive.google.com/file/d/1E1292BVx5Q-r2-gt5e_yUipy3pQTND83/view?usp=sharing 
+
 
 
